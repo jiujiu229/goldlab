@@ -192,7 +192,7 @@
         let yesterdayGold = null;
         let lastThreeDays = [];
         let timelineChart = null;
-        let macroData = { dollarIndex: 105.2, realRate: 2.10, inflationExp: 2.50 };
+        let macroData = { dollarIndex: 105.2, realRate: 2.10, inflationExp: 2.50, macroDate: null };
         let unit = 'usd';
         const exchangeRate = 7.2;
         const ounceToGram = 31.1035;
@@ -203,8 +203,9 @@
                 const res = await fetch('/api/gold?type=realtime');
                 const data = await res.json();
                 if (data.price) {
-                    const today = new Date().toISOString().slice(0,10);
-                    return { date: today, price: data.price };
+                    // 后端返回的 date 字段或当前日期
+                    const date = data.date || new Date().toISOString().slice(0,10);
+                    return { date, price: data.price };
                 }
                 return null;
             } catch (e) {
@@ -217,17 +218,14 @@
             try {
                 const res = await fetch('/api/gold?type=history');
                 const data = await res.json();
-                if (data.observations) {
-                    return data.observations
-                        .filter(obs => obs.value && obs.value !== '.')
-                        .map(obs => ({
-                            date: obs.date,
-                            price: parseFloat(obs.value),
-                            dollar_index: null,
-                            real_rate: null,
-                            inflation_exp: null
-                        }))
-                        .sort((a,b) => new Date(a.date) - new Date(b.date));
+                if (data.observations && Array.isArray(data.observations)) {
+                    return data.observations.map(obs => ({
+                        date: obs.date,
+                        price: obs.price,
+                        dollar_index: null,
+                        real_rate: null,
+                        inflation_exp: null
+                    })).sort((a,b) => new Date(a.date) - new Date(b.date));
                 }
                 return null;
             } catch (e) {
@@ -243,7 +241,8 @@
                 return {
                     dollarIndex: data.dollarIndex,
                     realRate: data.realRate,
-                    inflationExp: data.inflationExp
+                    inflationExp: data.inflationExp,
+                    macroDate: data.macroDate
                 };
             } catch (e) {
                 console.error('宏观数据获取失败', e);
@@ -251,7 +250,7 @@
             }
         }
 
-        // 备用数据（仅当所有 API 都失败时使用）
+        // 备用模拟数据（仅当所有 API 都失败时使用）
         function getFallbackData() {
             const months = [];
             let basePrice = 1920;
@@ -280,30 +279,40 @@
                 fetchMacroData()
             ]);
 
+            // 历史数据优先使用真实数据
             if (history && history.length > 0) {
                 goldData = history;
+                // 如果有实时数据，则更新或追加最后一条
                 if (realtime) {
-                    const lastDate = goldData[goldData.length-1]?.date;
-                    if (lastDate === realtime.date) {
-                        goldData[goldData.length-1].price = realtime.price;
+                    const last = goldData[goldData.length-1];
+                    if (last && last.date === realtime.date) {
+                        last.price = realtime.price;
                     } else {
                         goldData.push({ ...realtime, dollar_index: null, real_rate: null, inflation_exp: null });
                     }
                 }
             } else {
+                // 降级使用模拟数据（仅当历史 API 完全失败）
                 goldData = getFallbackData();
                 if (realtime) {
                     goldData[goldData.length-1].price = realtime.price;
                 }
             }
 
-            if (macro) macroData = macro;
+            // 确保 goldData 按日期排序
+            goldData.sort((a,b) => new Date(a.date) - new Date(b.date));
 
+            if (macro) {
+                macroData = macro;
+            }
+
+            // 今日金价取最新一条
             todayGold = { ...goldData[goldData.length-1] };
             todayGold.dollar_index = macroData.dollarIndex;
             todayGold.real_rate = macroData.realRate;
             todayGold.inflation_exp = macroData.inflationExp;
 
+            // 昨日金价
             if (goldData.length >= 2) {
                 yesterdayGold = { ...goldData[goldData.length-2] };
                 yesterdayGold.dollar_index = macroData.dollarIndex;
@@ -313,9 +322,11 @@
                 yesterdayGold = { ...todayGold };
             }
 
-            const sorted = [...goldData].sort((a,b) => new Date(b.date) - new Date(a.date));
-            lastThreeDays = sorted.slice(0,3).map(d => ({ date: d.date, price: d.price }));
+            // 近三日价格（最近三个交易日，按日期倒序取前三个）
+            const sortedDesc = [...goldData].sort((a,b) => new Date(b.date) - new Date(a.date));
+            lastThreeDays = sortedDesc.slice(0,3).map(d => ({ date: d.date, price: d.price }));
 
+            // 更新最后一条数据的宏观指标（用于情绪指数）
             goldData[goldData.length-1].dollar_index = macroData.dollarIndex;
             goldData[goldData.length-1].real_rate = macroData.realRate;
             goldData[goldData.length-1].inflation_exp = macroData.inflationExp;
@@ -398,6 +409,7 @@
             else if (sentiment >= 20) sentimentText = '谨慎';
             else sentimentText = '低迷';
 
+            // 近三日价格 HTML
             let threeDaysHtml = '<div class="flex justify-center space-x-6 mt-4">';
             lastThreeDays.forEach((day, idx) => {
                 const change = idx === 0 ? 0 : ((day.price - lastThreeDays[idx-1].price) / lastThreeDays[idx-1].price * 100).toFixed(2);
@@ -411,13 +423,15 @@
             });
             threeDaysHtml += '</div>';
 
+            const macroDateText = macroData.macroDate ? `宏观数据参考日期: ${macroData.macroDate}` : '宏观数据实时更新';
+
             container.innerHTML = `
                 <div class="glass-card p-6 md:p-8 mb-10 text-center">
                     <div class="text-5xl md:text-7xl font-bold gold-text mt-2">${priceDisplay.split(' ')[0]}</div>
                     <div class="text-gray-300 text-sm mt-1">${priceDisplay.split(' ').slice(1).join(' ')}</div>
                     <button id="unitToggle" class="mt-3 px-4 py-1 border border-[#D4AF37] rounded-full text-sm hover:bg-[#D4AF37]/20 transition">切换至 ${unit === 'usd' ? '元/克' : '美元/盎司'}</button>
                     ${threeDaysHtml}
-                    <div class="mt-4 text-right text-xs text-gray-500">数据更新时间: ${todayGold.date}</div>
+                    <div class="mt-4 text-right text-xs text-gray-500">金价数据时间: ${todayGold.date} | ${macroDateText}</div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -465,7 +479,7 @@
                     </div>
                 </div>
 
-                <div class="text-center text-gray-500 text-xs mt-12">金价历史来自 FRED，实时金价来自 GoldAPI.io，宏观数据来自 FRED，仅供学习参考</div>
+                <div class="text-center text-gray-500 text-xs mt-12">金价历史来自 Twelve Data，实时金价来自 GoldAPI.io，宏观数据来自 FRED，数据每日更新。</div>
             `;
             document.getElementById('unitToggle')?.addEventListener('click', () => {
                 unit = unit === 'usd' ? 'cny' : 'usd';
@@ -582,7 +596,7 @@
             container.innerHTML = `
                 <div class="glass-card p-6">
                     <h2 class="text-2xl gold-text mb-4">📅 黄金时间轴 · 近3年金价走势</h2>
-                    <div class="text-xs text-gray-400 mb-2">数据来源：FRED (系列 GOLDAMGBD228NLBM) 伦敦金定盘价，原始数据为日度/周度观测值，图表展示实际发布时间点，未做插值。</div>
+                    <div class="text-xs text-gray-400 mb-2">数据来源：Twelve Data (XAU/USD 日度历史数据)</div>
                     <div id="timelineChart" style="height: 450px;"></div>
                     <div class="mt-6 text-gray-300 text-sm space-y-2">
                         <p>✨ 点击下方事件查看金价反应（实时高亮）</p>
@@ -608,7 +622,7 @@
             }
             if (gaps.length > 0) {
                 const note = document.getElementById('timelineNote');
-                note.innerHTML = `⚠️ 数据存在间隔（最长 ${gaps[0].days} 天），图表已按实际日期展示，未做插值。这反映了 FRED 数据发布频率。`;
+                note.innerHTML = `⚠️ 数据存在间隔（最长 ${gaps[0].days} 天），图表已按实际日期展示，未做插值。`;
             }
 
             const events = [
@@ -771,7 +785,7 @@
             updateProgress();
         }
 
-        // -------------------- 页面切换 --------------------
+        // 页面切换
         function showPage(page) {
             document.querySelectorAll('.page-container').forEach(el => el.classList.add('hidden'));
             document.getElementById(`${page}Page`).classList.remove('hidden');
