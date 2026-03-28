@@ -12,8 +12,9 @@ export default async function handler(req, res) {
     
     const GOLD_API_KEY = process.env.GOLD_API_KEY;
     const FRED_API_KEY = process.env.FRED_API_KEY;
+    const TWELVE_DATA_API_KEY = process.env.TWELVE_DATA_API_KEY;
 
-    if (type === 'realtime') {
+    if (type === 'realtime')
         if (!GOLD_API_KEY) return res.status(500).json({ error: 'Missing GoldAPI key' });
         try {
             const response = await fetch('https://www.goldapi.io/api/XAU/USD', {
@@ -27,17 +28,32 @@ export default async function handler(req, res) {
     }
 
     if (type === 'history') {
-        if (!FRED_API_KEY) return res.status(500).json({ error: 'Missing FRED key' });
-        try {
-            const url = `https://api.stlouisfed.org/fred/series/observations?series_id=GOLDAMGBD228NLBM&api_key=${FRED_API_KEY}&file_type=json&sort_order=asc&limit=1000`;
-            const response = await fetch(url);
-            const data = await response.json();
-            return res.status(200).json(data);
-        } catch (err) {
-            return res.status(500).json({ error: 'Failed to fetch FRED data' });
-        }
+    if (!TWELVE_DATA_API_KEY) {
+        return res.status(500).json({ error: 'Missing Twelve Data API key' });
     }
+    try {
+        const url = `https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=1day&outputsize=5000&apikey=${TWELVE_DATA_API_KEY}`;
+        const response = await fetch(url);
+        const data = await response.json();
 
+        if (!data.values || !Array.isArray(data.values)) {
+            console.error('Twelve Data 返回数据格式错误', data);
+            return res.status(500).json({ error: 'Invalid data format from Twelve Data' });
+        }
+
+        // 转换数据格式，以匹配前端 goldData 期望的 { date, price } 格式
+        const formattedHistory = data.values.map(item => ({
+            date: item.datetime.split(' ')[0], // 只保留日期部分 'YYYY-MM-DD'
+            price: parseFloat(item.close)
+        })).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // 返回与 FRED 相同结构，前端无需改动
+        return res.status(200).json({ observations: formattedHistory });
+    } catch (err) {
+        console.error('Twelve Data 历史数据获取失败:', err);
+        return res.status(500).json({ error: 'Failed to fetch history from Twelve Data' });
+    }
+}
     if (type === 'macro') {
         if (!FRED_API_KEY) return res.status(500).json({ error: 'Missing FRED key' });
         try {
