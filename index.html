@@ -162,6 +162,20 @@
             background: rgba(212,175,55,0.4);
             transform: scale(1.02);
         }
+        /* 理论说明卡片样式 */
+        .theory-card {
+            background: rgba(0,0,0,0.3);
+            border-radius: 16px;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+        .theory-card h4 {
+            color: #D4AF37;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body class="text-white">
@@ -203,7 +217,6 @@
                 const res = await fetch('/api/gold?type=realtime');
                 const data = await res.json();
                 if (data.price) {
-                    // 后端返回的 date 字段或当前日期
                     const date = data.date || new Date().toISOString().slice(0,10);
                     return { date, price: data.price };
                 }
@@ -282,7 +295,6 @@
             // 历史数据优先使用真实数据
             if (history && history.length > 0) {
                 goldData = history;
-                // 如果有实时数据，则更新或追加最后一条
                 if (realtime) {
                     const last = goldData[goldData.length-1];
                     if (last && last.date === realtime.date) {
@@ -292,27 +304,21 @@
                     }
                 }
             } else {
-                // 降级使用模拟数据（仅当历史 API 完全失败）
                 goldData = getFallbackData();
                 if (realtime) {
                     goldData[goldData.length-1].price = realtime.price;
                 }
             }
 
-            // 确保 goldData 按日期排序
             goldData.sort((a,b) => new Date(a.date) - new Date(b.date));
 
-            if (macro) {
-                macroData = macro;
-            }
+            if (macro) macroData = macro;
 
-            // 今日金价取最新一条
             todayGold = { ...goldData[goldData.length-1] };
             todayGold.dollar_index = macroData.dollarIndex;
             todayGold.real_rate = macroData.realRate;
             todayGold.inflation_exp = macroData.inflationExp;
 
-            // 昨日金价
             if (goldData.length >= 2) {
                 yesterdayGold = { ...goldData[goldData.length-2] };
                 yesterdayGold.dollar_index = macroData.dollarIndex;
@@ -322,11 +328,9 @@
                 yesterdayGold = { ...todayGold };
             }
 
-            // 近三日价格（最近三个交易日，按日期倒序取前三个）
             const sortedDesc = [...goldData].sort((a,b) => new Date(b.date) - new Date(a.date));
             lastThreeDays = sortedDesc.slice(0,3).map(d => ({ date: d.date, price: d.price }));
 
-            // 更新最后一条数据的宏观指标（用于情绪指数）
             goldData[goldData.length-1].dollar_index = macroData.dollarIndex;
             goldData[goldData.length-1].real_rate = macroData.realRate;
             goldData[goldData.length-1].inflation_exp = macroData.inflationExp;
@@ -409,7 +413,6 @@
             else if (sentiment >= 20) sentimentText = '谨慎';
             else sentimentText = '低迷';
 
-            // 近三日价格 HTML
             let threeDaysHtml = '<div class="flex justify-center space-x-6 mt-4">';
             lastThreeDays.forEach((day, idx) => {
                 const change = idx === 0 ? 0 : ((day.price - lastThreeDays[idx-1].price) / lastThreeDays[idx-1].price * 100).toFixed(2);
@@ -479,6 +482,16 @@
                     </div>
                 </div>
 
+                <!-- 理论逻辑说明卡片 -->
+                <div class="theory-card mt-8">
+                    <h4>📖 指标背后的逻辑</h4>
+                    <ul class="list-disc list-inside text-gray-300 space-y-1">
+                        <li><span class="gold-text">黄金温度计</span>：将当前金价与近3年历史价格比较，计算其历史分位数。数值越高（>70%）表示当前价格相对历史偏贵，越低（<30%）表示偏便宜。</li>
+                        <li><span class="gold-text">黄金情绪指数</span>：综合价格动量（近5日涨跌幅，权重40%）、历史分位（40%）和美元走势（20%），得分越高市场越乐观，反之越悲观。</li>
+                        <li><span class="gold-text">黄金呼吸灯</span>：根据今日金价涨跌动态改变光晕大小和亮度，让您直观感受市场温度变化。</li>
+                    </ul>
+                </div>
+
                 <div class="text-center text-gray-500 text-xs mt-12">金价历史来自 Twelve Data，实时金价来自 GoldAPI.io，宏观数据来自 FRED，数据每日更新。</div>
             `;
             document.getElementById('unitToggle')?.addEventListener('click', () => {
@@ -501,6 +514,8 @@
             const infMin = (realInf - 2).toFixed(2);
             const infMax = (realInf + 2).toFixed(2);
 
+            const macroDateText = macroData.macroDate ? `宏观数据参考日期: ${macroData.macroDate}（FRED 数据通常滞后 1-2 个交易日）` : '宏观数据实时更新';
+
             const container = document.getElementById('simulatorPage');
             container.innerHTML = `
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -512,6 +527,7 @@
                             <div>10年期美债实际利率: ${realRate.toFixed(2)}%</div>
                             <div>通胀预期: ${realInf.toFixed(2)}%</div>
                         </div>
+                        <div class="mt-3 text-xs text-gray-500">${macroDateText}</div>
                     </div>
                     <div class="glass-card p-6">
                         <h3 class="text-xl gold-text mb-4">调整宏观变量</h3>
@@ -534,12 +550,23 @@
                         </div>
                     </div>
                 </div>
-                <div class="glass-card p-5 mt-6 text-sm text-gray-300 border-l-4 border-[#D4AF37]">
-                    <p class="gold-text font-semibold mb-1">📐 模拟逻辑说明</p>
-                    <p>采用简化经济学模型：<br>
-                    金价变动 = <span class="text-white">-0.5 × (美元变动%) - 0.3 × (利率变动百分点) + 0.4 × (通胀变动百分点)</span><br>
-                    系数基于历史相关性估算，仅用于直观展示变量影响，不构成投资建议。</p>
+
+                <!-- 理论逻辑说明卡片 -->
+                <div class="theory-card mt-6">
+                    <h4>📐 模拟器背后的经济学逻辑</h4>
+                    <ul class="list-disc list-inside text-gray-300 space-y-1">
+                        <li><span class="gold-text">美元指数 ↑ → 金价 ↓</span>：黄金以美元计价，美元走强时黄金相对变贵，需求下降。</li>
+                        <li><span class="gold-text">实际利率 ↑ → 金价 ↓</span>：黄金不生息，利率上升会增加持有黄金的机会成本。</li>
+                        <li><span class="gold-text">通胀预期 ↑ → 金价 ↑</span>：黄金被视为抗通胀资产，通胀预期上升会吸引资金流入黄金。</li>
+                    </ul>
+                    <p class="text-gray-400 text-xs mt-2">模型公式：金价变动 = -0.5×(美元变动%) -0.3×(利率变动百分点) +0.4×(通胀变动百分点) （简化系数，仅用于演示）</p>
                 </div>
+
+                <div class="glass-card p-5 mt-6 text-sm text-gray-300 border-l-4 border-[#D4AF37]">
+                    <p class="gold-text font-semibold mb-1">🎮 互动玩法</p>
+                    <p>拖动上方滑块，观察模拟金价如何随宏观变量变化。当三个滑块都调到极端值时，还会触发隐藏彩蛋！</p>
+                </div>
+
                 <div class="glass-card p-6 mt-8 text-center">
                     <h3 class="text-xl gold-text mb-2">模拟金价</h3>
                     <div id="simulatedPriceDisplay" class="text-5xl font-bold gold-text">${realPrice.toFixed(2)} 美元/盎司</div>
@@ -811,7 +838,6 @@
             }
         }
 
-        // 启动应用
         initData();
         window.addEventListener('DOMContentLoaded', addGoldenParticles);
     </script>
