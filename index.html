@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
-        /* 璀璨华丽背景 */
+        /* ========== 基础样式 ========== */
         body {
             background: linear-gradient(145deg, #1A1A1A 0%, #2C2418 100%);
             background-attachment: fixed;
@@ -83,6 +83,18 @@
         .breathing {
             animation: breathe-glow 2s ease-in-out infinite;
         }
+        /* 温度计圆环动画 */
+        @keyframes fillGauge {
+            from { stroke-dashoffset: 251.2; }
+            to { stroke-dashoffset: var(--target-offset); }
+        }
+        .gauge-fill {
+            animation: fillGauge 1s ease-out forwards;
+        }
+        /* 滑块数值变化平滑 */
+        .slider-value {
+            transition: all 0.1s ease;
+        }
         input[type="range"] {
             -webkit-appearance: none;
             -moz-appearance: none;
@@ -122,7 +134,7 @@
             bottom: 125%;
             left: 50%;
             margin-left: -80px;
-            width: 160px;
+            width: 200px;
             font-size: 12px;
             border: 1px solid #D4AF37;
             opacity: 0;
@@ -162,7 +174,6 @@
             background: rgba(212,175,55,0.4);
             transform: scale(1.02);
         }
-        /* 理论说明卡片样式 */
         .theory-card {
             background: rgba(0,0,0,0.3);
             border-radius: 16px;
@@ -170,11 +181,78 @@
             margin-top: 1rem;
             font-size: 0.85rem;
             line-height: 1.5;
+            border-left: 2px solid #D4AF37;
         }
         .theory-card h4 {
             color: #D4AF37;
             margin-bottom: 0.5rem;
             font-weight: 600;
+        }
+        /* 事件分析弹窗样式 */
+        .event-analysis-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            visibility: hidden;
+            opacity: 0;
+            transition: all 0.3s;
+        }
+        .event-analysis-modal.active {
+            visibility: visible;
+            opacity: 1;
+        }
+        .modal-content {
+            max-width: 500px;
+            width: 90%;
+            background: #1a1a1a;
+            border: 1px solid #D4AF37;
+            border-radius: 24px;
+            padding: 1.5rem;
+        }
+        /* 冷知识挑战模式 */
+        .challenge-quiz {
+            background: rgba(0,0,0,0.5);
+            border-radius: 16px;
+            padding: 0.75rem;
+            margin-top: 1rem;
+        }
+        .challenge-option {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .challenge-option:hover {
+            background: rgba(212,175,55,0.2);
+            transform: translateX(4px);
+        }
+        .challenge-correct {
+            background: rgba(34,197,94,0.2);
+            border-color: #22c55e;
+        }
+        .challenge-wrong {
+            background: rgba(239,68,68,0.2);
+            border-color: #ef4444;
+        }
+        /* 折叠面板 */
+        .collapse-header {
+            cursor: pointer;
+            user-select: none;
+        }
+        .collapse-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .collapse-content.open {
+            max-height: 500px;
+            transition: max-height 0.5s ease-in;
         }
     </style>
 </head>
@@ -185,7 +263,6 @@
             <span class="gold-text">GoldLab</span>
         </div>
         <div class="flex space-x-4 md:space-x-6">
-            <a href="#" onclick="showPage('landing')" class="nav-link transition pb-1" id="nav-landing">首页</a>
             <a href="#" onclick="showPage('home')" class="nav-link transition pb-1" id="nav-home">今日金价位</a>
             <a href="#" onclick="showPage('simulator')" class="nav-link transition pb-1" id="nav-simulator">金价模拟器</a>
             <a href="#" onclick="showPage('timeline')" class="nav-link transition pb-1" id="nav-timeline">黄金时间轴</a>
@@ -193,8 +270,7 @@
         </div>
     </nav>
 
-    <div id="landingPage" class="page-container px-6 md:px-20 py-12 max-w-7xl mx-auto"></div>
-    <div id="homePage" class="page-container hidden px-6 md:px-20 py-12 max-w-7xl mx-auto"></div>
+    <div id="homePage" class="page-container px-6 md:px-20 py-12 max-w-7xl mx-auto"></div>
     <div id="simulatorPage" class="page-container hidden px-6 md:px-20 py-12 max-w-7xl mx-auto"></div>
     <div id="timelinePage" class="page-container hidden px-6 md:px-20 py-12 max-w-7xl mx-auto"></div>
     <div id="factsPage" class="page-container hidden px-6 md:px-20 py-12 max-w-7xl mx-auto"></div>
@@ -292,7 +368,6 @@
                 fetchMacroData()
             ]);
 
-            // 历史数据优先使用真实数据
             if (history && history.length > 0) {
                 goldData = history;
                 if (realtime) {
@@ -335,8 +410,8 @@
             goldData[goldData.length-1].real_rate = macroData.realRate;
             goldData[goldData.length-1].inflation_exp = macroData.inflationExp;
 
-            renderLanding();
-            showPage('landing');
+            renderHome();
+            showPage('home');
         }
 
         // -------------------- 工具函数 --------------------
@@ -372,27 +447,7 @@
             return `${priceCny.toFixed(2)} 元/克`;
         }
 
-        // -------------------- 页面渲染函数 --------------------
-        function renderLanding() {
-            const container = document.getElementById('landingPage');
-            container.innerHTML = `
-                <div class="glass-card p-10 text-center">
-                    <div class="text-7xl md:text-8xl font-bold gold-text mb-4">GoldLab</div>
-                    <div class="text-2xl md:text-3xl text-gray-300 mb-2">玩转黄金，看懂世界</div>
-                    <div class="w-24 h-1 bg-[#D4AF37] mx-auto my-6"></div>
-                    <div class="max-w-2xl mx-auto text-gray-300 space-y-4">
-                        <p>✨ 欢迎来到 GoldLab —— 一个让黄金数据变得有趣、易懂的互动实验室。</p>
-                        <p>📊 我们通过真实 API 为您呈现实时金价、历史走势，并用「温度计」「情绪指数」「呼吸灯」等趣味工具，帮您快速把握市场位置。</p>
-                        <p>🎮 在「金价模拟器」中，您可以调节美元、利率、通胀，亲身体验它们如何影响黄金价格。</p>
-                        <p>📅 「黄金时间轴」带您回顾近年重大事件与金价的联动。</p>
-                        <p>🧠 还有「冷知识轮盘」，转动轮盘，解锁黄金背后的小秘密。</p>
-                        <p class="gold-text text-sm mt-6">立即探索，让黄金不再神秘！</p>
-                    </div>
-                    <button onclick="showPage('home')" class="mt-8 px-6 py-2 border border-[#D4AF37] rounded-full hover:bg-[#D4AF37]/20 transition">开始体验 →</button>
-                </div>
-            `;
-        }
-
+        // -------------------- 页面渲染 --------------------
         function renderHome() {
             if (!todayGold) return;
             const container = document.getElementById('homePage');
@@ -413,6 +468,7 @@
             else if (sentiment >= 20) sentimentText = '谨慎';
             else sentimentText = '低迷';
 
+            // 近三日价格 HTML
             let threeDaysHtml = '<div class="flex justify-center space-x-6 mt-4">';
             lastThreeDays.forEach((day, idx) => {
                 const change = idx === 0 ? 0 : ((day.price - lastThreeDays[idx-1].price) / lastThreeDays[idx-1].price * 100).toFixed(2);
@@ -426,15 +482,13 @@
             });
             threeDaysHtml += '</div>';
 
-            const macroDateText = macroData.macroDate ? `宏观数据参考日期: ${macroData.macroDate}` : '宏观数据实时更新';
-
             container.innerHTML = `
                 <div class="glass-card p-6 md:p-8 mb-10 text-center">
                     <div class="text-5xl md:text-7xl font-bold gold-text mt-2">${priceDisplay.split(' ')[0]}</div>
                     <div class="text-gray-300 text-sm mt-1">${priceDisplay.split(' ').slice(1).join(' ')}</div>
                     <button id="unitToggle" class="mt-3 px-4 py-1 border border-[#D4AF37] rounded-full text-sm hover:bg-[#D4AF37]/20 transition">切换至 ${unit === 'usd' ? '元/克' : '美元/盎司'}</button>
                     ${threeDaysHtml}
-                    <div class="mt-4 text-right text-xs text-gray-500">金价数据时间: ${todayGold.date} | ${macroDateText}</div>
+                    <div class="mt-4 text-right text-xs text-gray-500">数据时间: ${todayGold.date}</div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -444,14 +498,14 @@
                         <div class="relative w-48 h-48 mx-auto">
                             <svg viewBox="0 0 200 100" class="w-full">
                                 <path d="M20,80 A80,80 0 0,1 180,80" fill="none" stroke="#2a2a2a" stroke-width="12" stroke-linecap="round"/>
-                                <path d="M20,80 A80,80 0 0,1 180,80" fill="none" stroke="url(#goldGrad)" stroke-width="12" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="${251.2 * (1 - percentile/100)}"/>
+                                <path id="gauge-fill" d="M20,80 A80,80 0 0,1 180,80" fill="none" stroke="url(#goldGrad)" stroke-width="12" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="${251.2}" style="--target-offset: ${251.2 * (1 - percentile/100)}; animation: fillGauge 1s ease-out forwards;"/>
                                 <defs><linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#B49450"/><stop offset="100%" stop-color="#D4AF37"/></linearGradient></defs>
                                 <text x="100" y="70" text-anchor="middle" fill="white" font-size="24" font-weight="bold">${percentDisplay}%</text>
                                 <text x="100" y="95" text-anchor="middle" fill="#D4AF37" font-size="12">历史分位</text>
                             </svg>
                         </div>
                         <p class="text-center text-gray-300 mt-2">当前金价处于近3年<span class="gold-text"> ${percentDisplay}% </span>分位，${temperatureText}</p>
-                        <div class="fun-fact-card p-2 mt-3 rounded text-gray-400">💡 小贴士：分位数＞70%时通常偏贵，＜30%时可能偏便宜。</div>
+                        <div class="fun-fact-card p-2 mt-3 rounded text-gray-400">💡 分位数＞70%偏贵，＜30%偏便宜。</div>
                     </div>
 
                     <!-- 情绪指数 -->
@@ -468,7 +522,7 @@
                             </div>
                             <p class="text-center text-gray-300 mt-4">今日情绪指数 ${sentiment}，市场情绪${sentimentText}</p>
                         </div>
-                        <div class="fun-fact-card p-2 mt-3 rounded text-gray-400">🎯 情绪高涨（>80）时过热，低迷（<20）时可能被低估。</div>
+                        <div class="fun-fact-card p-2 mt-3 rounded text-gray-400">🎯 情绪高涨（>80）过热，低迷（<20）低估。</div>
                     </div>
 
                     <!-- 呼吸灯 -->
@@ -478,26 +532,44 @@
                             <span class="text-3xl">✨</span>
                         </div>
                         <p class="mt-4 text-lg">今日涨跌 <span class="${todayChange >= 0 ? 'text-green-400' : 'text-red-400'} font-bold">${todayChange >= 0 ? '+' : ''}${todayChange}%</span></p>
-                        <div class="fun-fact-card p-2 mt-3 rounded text-gray-400">🌬️ 光晕脉动频率与涨跌强度同步，让您「看见」市场脉搏。</div>
+                        <div class="fun-fact-card p-2 mt-3 rounded text-gray-400">🌬️ 光晕脉动强度与涨跌幅度同步。</div>
                     </div>
                 </div>
 
-                <!-- 理论逻辑说明卡片 -->
-                <div class="theory-card mt-8">
-                    <h4>📖 指标背后的逻辑</h4>
-                    <ul class="list-disc list-inside text-gray-300 space-y-1">
-                        <li><span class="gold-text">黄金温度计</span>：将当前金价与近3年历史价格比较，计算其历史分位数。数值越高（>70%）表示当前价格相对历史偏贵，越低（<30%）表示偏便宜。</li>
-                        <li><span class="gold-text">黄金情绪指数</span>：综合价格动量（近5日涨跌幅，权重40%）、历史分位（40%）和美元走势（20%），得分越高市场越乐观，反之越悲观。</li>
-                        <li><span class="gold-text">黄金呼吸灯</span>：根据今日金价涨跌动态改变光晕大小和亮度，让您直观感受市场温度变化。</li>
-                    </ul>
+                <!-- 黄金价格是如何形成的 折叠卡片 -->
+                <div class="glass-card mt-8 p-4">
+                    <div class="collapse-header flex justify-between items-center gold-text" onclick="toggleCollapse(this)">
+                        <h3 class="text-lg font-semibold">📖 黄金价格是如何形成的？</h3>
+                        <span>▼</span>
+                    </div>
+                    <div class="collapse-content mt-3 text-gray-300 text-sm">
+                        <p>黄金价格由全球供需关系决定，主要受以下因素影响：</p>
+                        <ul class="list-disc list-inside mt-2 space-y-1">
+                            <li><span class="gold-text">美元指数</span>：黄金以美元计价，美元走强 → 金价承压；美元走弱 → 金价走强。</li>
+                            <li><span class="gold-text">实际利率</span>：黄金不生息，实际利率上升 → 持有机会成本增加 → 金价下跌。</li>
+                            <li><span class="gold-text">通胀预期</span>：黄金被视为抗通胀资产，通胀预期上升 → 金价上涨。</li>
+                            <li><span class="gold-text">避险情绪</span>：地缘冲突、经济衰退时，资金涌入黄金避险，推高金价。</li>
+                        </ul>
+                        <div class="mt-3 p-2 bg-black/30 rounded-lg">
+                            <p class="text-xs text-gray-400">✨ 小贴士：下方模拟器可以亲自体验调节美元、利率、通胀对金价的影响！</p>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="text-center text-gray-500 text-xs mt-12">金价历史来自 Twelve Data，实时金价来自 GoldAPI.io，宏观数据来自 FRED，数据每日更新。</div>
+                <div class="text-center text-gray-500 text-xs mt-8">数据来源：Twelve Data、GoldAPI、FRED | 实时更新</div>
             `;
             document.getElementById('unitToggle')?.addEventListener('click', () => {
                 unit = unit === 'usd' ? 'cny' : 'usd';
                 renderHome();
             });
+        }
+
+        // 折叠面板切换函数
+        function toggleCollapse(element) {
+            const content = element.parentElement.querySelector('.collapse-content');
+            content.classList.toggle('open');
+            const arrow = element.querySelector('span');
+            arrow.textContent = content.classList.contains('open') ? '▲' : '▼';
         }
 
         function renderSimulator() {
@@ -514,8 +586,6 @@
             const infMin = (realInf - 2).toFixed(2);
             const infMax = (realInf + 2).toFixed(2);
 
-            const macroDateText = macroData.macroDate ? `宏观数据参考日期: ${macroData.macroDate}（FRED 数据通常滞后 1-2 个交易日）` : '宏观数据实时更新';
-
             const container = document.getElementById('simulatorPage');
             container.innerHTML = `
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -523,27 +593,36 @@
                         <h3 class="text-xl gold-text mb-2">真实金价</h3>
                         <div class="text-4xl font-bold gold-text">${realPrice.toFixed(2)} <span class="text-base text-gray-300">美元/盎司</span></div>
                         <div class="mt-6 space-y-2 text-sm text-gray-300">
-                            <div>美元指数: ${realDollar.toFixed(2)}</div>
-                            <div>10年期美债实际利率: ${realRate.toFixed(2)}%</div>
-                            <div>通胀预期: ${realInf.toFixed(2)}%</div>
+                            <div class="flex justify-between">
+                                <span>美元指数 <span class="tooltip">(DTWEXBGS)❓<span class="tooltip-text">美联储贸易加权广义指数，衡量美元对主要贸易伙伴货币的汇率。常见DXY仅包含6种货币，范围通常在100-130之间。</span></span></span>
+                                <span class="slider-value" id="dollarValue">${realDollar.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>10年期美债实际利率 <span class="tooltip">(DFII10)❓<span class="tooltip-text">实际利率 = 名义利率 - 通胀预期。当前名义利率约4.3%，通胀预期2.2%，实际利率约2.1%。数据来自TIPS市场交易。</span></span></span>
+                                <span class="slider-value" id="rateValue">${realRate.toFixed(2)}%</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>通胀预期 <span class="tooltip">(T10YIE)❓<span class="tooltip-text">10年期盈亏平衡通胀率，市场对未来10年平均通胀的预期。日度数据，每日更新。</span></span></span>
+                                <span class="slider-value" id="infValue">${realInf.toFixed(2)}%</span>
+                            </div>
+                            <div class="mt-3 text-xs text-gray-500">宏观数据参考日期: ${macroData.macroDate || '今日'} (FRED数据通常滞后1-2个交易日)</div>
                         </div>
-                        <div class="mt-3 text-xs text-gray-500">${macroDateText}</div>
                     </div>
                     <div class="glass-card p-6">
                         <h3 class="text-xl gold-text mb-4">调整宏观变量</h3>
                         <div class="space-y-6">
                             <div>
-                                <div class="flex justify-between"><span class="gold-text">美元指数</span><span id="dollarValue">${realDollar.toFixed(2)}</span></div>
+                                <div class="flex justify-between"><span class="gold-text">美元指数</span><span id="dollarSliderValue">${realDollar.toFixed(2)}</span></div>
                                 <input type="range" id="dollarSlider" min="${dollarMin}" max="${dollarMax}" step="0.1" value="${realDollar}" class="w-full slider-gold mt-2">
                                 <p class="text-xs text-gray-400 mt-1">美元涨 → 金价跌</p>
                             </div>
                             <div>
-                                <div class="flex justify-between"><span class="gold-text">实际利率 (%)</span><span id="rateValue">${realRate.toFixed(2)}</span></div>
+                                <div class="flex justify-between"><span class="gold-text">实际利率 (%)</span><span id="rateSliderValue">${realRate.toFixed(2)}</span></div>
                                 <input type="range" id="rateSlider" min="${rateMin}" max="${rateMax}" step="0.05" value="${realRate}" class="w-full slider-gold mt-2">
                                 <p class="text-xs text-gray-400 mt-1">利率涨 → 金价跌</p>
                             </div>
                             <div>
-                                <div class="flex justify-between"><span class="gold-text">通胀预期 (%)</span><span id="infValue">${realInf.toFixed(2)}</span></div>
+                                <div class="flex justify-between"><span class="gold-text">通胀预期 (%)</span><span id="infSliderValue">${realInf.toFixed(2)}</span></div>
                                 <input type="range" id="infSlider" min="${infMin}" max="${infMax}" step="0.05" value="${realInf}" class="w-full slider-gold mt-2">
                                 <p class="text-xs text-gray-400 mt-1">通胀涨 → 金价涨</p>
                             </div>
@@ -551,20 +630,30 @@
                     </div>
                 </div>
 
-                <!-- 理论逻辑说明卡片 -->
-                <div class="theory-card mt-6">
-                    <h4>📐 模拟器背后的经济学逻辑</h4>
-                    <ul class="list-disc list-inside text-gray-300 space-y-1">
-                        <li><span class="gold-text">美元指数 ↑ → 金价 ↓</span>：黄金以美元计价，美元走强时黄金相对变贵，需求下降。</li>
-                        <li><span class="gold-text">实际利率 ↑ → 金价 ↓</span>：黄金不生息，利率上升会增加持有黄金的机会成本。</li>
-                        <li><span class="gold-text">通胀预期 ↑ → 金价 ↑</span>：黄金被视为抗通胀资产，通胀预期上升会吸引资金流入黄金。</li>
-                    </ul>
-                    <p class="text-gray-400 text-xs mt-2">模型公式：金价变动 = -0.5×(美元变动%) -0.3×(利率变动百分点) +0.4×(通胀变动百分点) （简化系数，仅用于演示）</p>
+                <!-- 变量关系图示和经济学原理 -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                    <div class="glass-card p-4 text-center">
+                        <div class="text-3xl mb-2">💵 ↔️ 📉</div>
+                        <p class="gold-text font-semibold">美元指数 ↑ → 金价 ↓</p>
+                        <p class="text-xs text-gray-400 mt-1">美元走强，黄金相对变贵，需求下降</p>
+                    </div>
+                    <div class="glass-card p-4 text-center">
+                        <div class="text-3xl mb-2">🏦 ↔️ 📉</div>
+                        <p class="gold-text font-semibold">实际利率 ↑ → 金价 ↓</p>
+                        <p class="text-xs text-gray-400 mt-1">持有黄金的机会成本上升</p>
+                    </div>
+                    <div class="glass-card p-4 text-center">
+                        <div class="text-3xl mb-2">📈 ↔️ 📈</div>
+                        <p class="gold-text font-semibold">通胀预期 ↑ → 金价 ↑</p>
+                        <p class="text-xs text-gray-400 mt-1">黄金的抗通胀属性吸引资金流入</p>
+                    </div>
                 </div>
 
                 <div class="glass-card p-5 mt-6 text-sm text-gray-300 border-l-4 border-[#D4AF37]">
-                    <p class="gold-text font-semibold mb-1">🎮 互动玩法</p>
-                    <p>拖动上方滑块，观察模拟金价如何随宏观变量变化。当三个滑块都调到极端值时，还会触发隐藏彩蛋！</p>
+                    <p class="gold-text font-semibold mb-1">📐 模拟逻辑说明</p>
+                    <p>采用简化经济学模型：<br>
+                    金价变动 = <span class="text-white">-0.5 × (美元变动%) - 0.3 × (利率变动百分点) + 0.4 × (通胀变动百分点)</span><br>
+                    系数基于历史相关性估算，仅用于直观展示变量影响。</p>
                 </div>
 
                 <div class="glass-card p-6 mt-8 text-center">
@@ -573,15 +662,19 @@
                     <div id="simulatedDiff" class="mt-2 text-gray-300">与真实金价持平</div>
                     <div id="easterEgg" class="mt-4 text-[#D4AF37] text-sm font-semibold"></div>
                 </div>
-                <div class="text-center text-gray-500 text-xs mt-6">本模拟器使用简化经济学模型，仅用于演示变量关系，不构成投资建议</div>
+                <div class="text-center text-gray-500 text-xs mt-6">本模拟器使用简化模型，不构成投资建议</div>
             `;
 
+            // 绑定滑块事件
             const dollarSlider = document.getElementById('dollarSlider');
             const rateSlider = document.getElementById('rateSlider');
             const infSlider = document.getElementById('infSlider');
-            const dollarVal = document.getElementById('dollarValue');
-            const rateVal = document.getElementById('rateValue');
-            const infVal = document.getElementById('infValue');
+            const dollarSliderVal = document.getElementById('dollarSliderValue');
+            const rateSliderVal = document.getElementById('rateSliderValue');
+            const infSliderVal = document.getElementById('infSliderValue');
+            const dollarValue = document.getElementById('dollarValue');
+            const rateValue = document.getElementById('rateValue');
+            const infValue = document.getElementById('infValue');
             const simulatedPriceSpan = document.getElementById('simulatedPriceDisplay');
             const diffSpan = document.getElementById('simulatedDiff');
             const eggDiv = document.getElementById('easterEgg');
@@ -590,9 +683,12 @@
                 const curDollar = parseFloat(dollarSlider.value);
                 const curRate = parseFloat(rateSlider.value);
                 const curInf = parseFloat(infSlider.value);
-                dollarVal.innerText = curDollar.toFixed(2);
-                rateVal.innerText = curRate.toFixed(2);
-                infVal.innerText = curInf.toFixed(2);
+                dollarSliderVal.innerText = curDollar.toFixed(2);
+                rateSliderVal.innerText = curRate.toFixed(2);
+                infSliderVal.innerText = curInf.toFixed(2);
+                dollarValue.innerText = curDollar.toFixed(2);
+                rateValue.innerText = curRate.toFixed(2);
+                infValue.innerText = curInf.toFixed(2);
 
                 const deltaDollarPct = (curDollar - realDollar) / realDollar;
                 const deltaRate = curRate - realRate;
@@ -626,7 +722,7 @@
                     <div class="text-xs text-gray-400 mb-2">数据来源：Twelve Data (XAU/USD 日度历史数据)</div>
                     <div id="timelineChart" style="height: 450px;"></div>
                     <div class="mt-6 text-gray-300 text-sm space-y-2">
-                        <p>✨ 点击下方事件查看金价反应（实时高亮）</p>
+                        <p>✨ 点击下方事件，查看该事件如何影响金价（机制分析）</p>
                         <div class="flex flex-wrap gap-2 mt-4" id="eventButtons"></div>
                         <div class="text-xs text-gray-500 mt-4" id="timelineNote"></div>
                     </div>
@@ -649,16 +745,17 @@
             }
             if (gaps.length > 0) {
                 const note = document.getElementById('timelineNote');
-                note.innerHTML = `⚠️ 数据存在间隔（最长 ${gaps[0].days} 天），图表已按实际日期展示，未做插值。`;
+                note.innerHTML = `⚠️ 数据存在间隔（最长 ${gaps[0].days} 天），图表已按实际日期展示。`;
             }
 
+            // 事件及机制分析
             const events = [
-                { date: "2023-03-10", name: "硅谷银行倒闭", desc: "引发避险情绪，金价短期上涨" },
-                { date: "2023-10-07", name: "巴以冲突爆发", desc: "地缘风险推高金价" },
-                { date: "2024-03-20", name: "美联储暗示降息", desc: "宽松预期支撑金价" },
-                { date: "2024-09-18", name: "美联储首次降息", desc: "美元走弱，金价走强" },
-                { date: "2025-04-02", name: "关税政策冲击", desc: "市场波动加剧" },
-                { date: "2026-01-15", name: "通胀超预期反弹", desc: "加息担忧压制金价" }
+                { date: "2023-03-10", name: "硅谷银行倒闭", desc: "引发银行业恐慌，避险情绪升温，资金涌入黄金，金价短期大涨。", mechanism: "避险需求：银行危机 → 存款安全担忧 → 资金流向黄金等安全资产 → 金价上涨" },
+                { date: "2023-10-07", name: "巴以冲突爆发", desc: "地缘政治风险激增，市场避险情绪推高金价。", mechanism: "地缘风险：冲突升级 → 不确定性增加 → 投资者寻求避险 → 黄金需求上升 → 金价上涨" },
+                { date: "2024-03-20", name: "美联储暗示降息", desc: "货币政策转向预期，美元走弱，实际利率下降，金价走强。", mechanism: "货币政策：降息预期 → 美元贬值预期 + 实际利率下行 → 持有黄金机会成本降低 → 金价上涨" },
+                { date: "2024-09-18", name: "美联储首次降息", desc: "正式进入降息周期，美元指数回落，金价获得支撑。", mechanism: "利率路径：降息落地 → 名义利率下降 → 实际利率随之下行 → 黄金吸引力增强 → 金价上涨" },
+                { date: "2025-04-02", name: "关税政策冲击", desc: "贸易摩擦加剧，经济前景不确定性增加，金价波动加剧。", mechanism: "贸易政策：关税壁垒 → 全球供应链扰动 → 经济放缓担忧 → 避险需求上升 → 金价短期震荡" },
+                { date: "2026-01-15", name: "通胀超预期反弹", desc: "通胀数据高于预期，市场担忧美联储继续加息，金价承压。", mechanism: "通胀+加息预期：通胀超预期 → 市场押注更鹰派政策 → 实际利率上行预期 → 金价下跌" }
             ];
 
             const btnContainer = document.getElementById('eventButtons');
@@ -666,7 +763,7 @@
                 const btn = document.createElement('button');
                 btn.className = "px-3 py-1 border border-[#D4AF37] rounded-full text-xs hover:bg-[#D4AF37]/20 transition";
                 btn.innerText = `${ev.date.slice(0,7)} ${ev.name}`;
-                btn.onclick = () => highlightEvent(ev, dates);
+                btn.onclick = () => showEventAnalysis(ev);
                 btnContainer.appendChild(btn);
             });
 
@@ -684,35 +781,30 @@
             }
         }
 
-        function highlightEvent(event, allDates) {
-            if (!timelineChart) return;
-            const targetDate = new Date(event.date);
-            let startIndex = -1, endIndex = -1;
-            for (let i = 0; i < allDates.length; i++) {
-                const curDate = new Date(allDates[i]);
-                if (startIndex === -1 && curDate >= targetDate) {
-                    startIndex = Math.max(0, i - 15);
-                }
-                if (startIndex !== -1 && curDate > new Date(targetDate.getTime() + 30*24*3600*1000)) {
-                    endIndex = i;
-                    break;
-                }
-            }
-            if (startIndex === -1) startIndex = 0;
-            if (endIndex === -1) endIndex = allDates.length - 1;
-
-            timelineChart.setOption({
-                series: [{
-                    markArea: {
-                        data: [[ { xAxis: startIndex }, { xAxis: endIndex, label: { show: true, formatter: event.name, color: '#D4AF37', position: 'insideTop' } } ]],
-                        itemStyle: { color: 'rgba(212, 175, 55, 0.2)', borderColor: '#D4AF37', borderWidth: 1 }
-                    }
-                }]
+        function showEventAnalysis(event) {
+            // 创建弹窗
+            const modal = document.createElement('div');
+            modal.className = 'event-analysis-modal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h3 class="gold-text text-xl mb-2">${event.date} ${event.name}</h3>
+                    <p class="text-gray-300 text-sm mb-3">${event.desc}</p>
+                    <div class="border-l-2 border-[#D4AF37] pl-3 mt-3">
+                        <p class="gold-text text-xs font-semibold">📊 传导机制</p>
+                        <p class="text-gray-400 text-xs mt-1">${event.mechanism}</p>
+                    </div>
+                    <button onclick="this.closest('.event-analysis-modal').remove()" class="mt-4 px-4 py-1 border border-[#D4AF37] rounded-full text-xs hover:bg-[#D4AF37]/20">关闭</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            setTimeout(() => modal.classList.add('active'), 10);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
             });
-            alert(`${event.date}\n${event.name}\n${event.desc}`);
         }
 
         function renderFacts() {
+            // 扩充至20条冷知识
             const factsList = [
                 "全球所有黄金熔在一起，可铸成一个边长约21米的立方体。",
                 "一部智能手机约含0.034克黄金。",
@@ -725,10 +817,28 @@
                 "航天器部件常镀金，因为黄金能反射红外线并耐腐蚀。",
                 "中国是2024年全球最大的黄金生产国。",
                 "黄金的化学符号Au来自拉丁语Aurum，意为“闪耀的黎明”。",
-                "每吨iPhone中提取的黄金比每吨金矿石高出300倍。"
+                "每吨iPhone中提取的黄金比每吨金矿石高出300倍。",
+                "公元前700年，黄金就已成为货币。",
+                "纯度99.99%的黄金被称为“四九金”。",
+                "黄金在电子工业中用于制造连接器和开关。",
+                "历史上最著名的黄金矿工是19世纪美国加州淘金热中的狂热者。",
+                "黄金的重量用金衡盎司计量，1金衡盎司≈31.1035克。",
+                "南非曾是全球最大的黄金生产国，但近年被中国超越。",
+                "诺贝尔奖奖牌由黄金制成，重约175克。",
+                "黄金在医学中曾被用于治疗类风湿关节炎（金疗法）。"
             ];
             let unlocked = JSON.parse(localStorage.getItem('goldFactsUnlocked')) || [];
             if (unlocked.length === 0) unlocked = [0];
+
+            // 挑战模式题库
+            const challengeQuestions = [
+                { question: "黄金的化学符号是什么？", options: ["Au", "Ag", "Fe", "Cu"], correct: 0 },
+                { question: "全球最大的黄金持有机构是？", options: ["美联储", "中国央行", "国际货币基金组织", "世界黄金协会"], correct: 0 },
+                { question: "1金衡盎司黄金约等于多少克？", options: ["28.35克", "31.10克", "32.15克", "30.00克"], correct: 1 },
+                { question: "黄金的熔点大约是多少？", options: ["1064°C", "1948°C", "1540°C", "962°C"], correct: 0 }
+            ];
+            let currentChallenge = 0;
+            let challengeScore = parseInt(localStorage.getItem('goldChallengeScore') || '0');
 
             function updateProgress() {
                 const percent = (unlocked.length / factsList.length) * 100;
@@ -748,6 +858,7 @@
                         badge.classList.add('hidden');
                     }
                 }
+                document.querySelector('#challengeScore').innerText = challengeScore;
             }
 
             function spinAndUpdate() {
@@ -779,6 +890,43 @@
                 });
             }
 
+            function loadChallenge() {
+                const q = challengeQuestions[currentChallenge % challengeQuestions.length];
+                const container = document.getElementById('challengeContainer');
+                if (container) {
+                    container.innerHTML = `
+                        <div class="text-sm gold-text mb-2">📚 挑战模式 (积分: <span id="challengeScore">${challengeScore}</span>)</div>
+                        <div class="text-white text-sm mb-2">${q.question}</div>
+                        <div class="space-y-1">
+                            ${q.options.map((opt, idx) => `<div class="challenge-option p-2 border border-gray-600 rounded-lg text-sm" data-opt-index="${idx}">${opt}</div>`).join('')}
+                        </div>
+                    `;
+                    document.querySelectorAll('.challenge-option').forEach(opt => {
+                        opt.addEventListener('click', function() {
+                            const selected = parseInt(this.dataset.optIndex);
+                            const isCorrect = (selected === q.correct);
+                            if (isCorrect) {
+                                challengeScore += 10;
+                                localStorage.setItem('goldChallengeScore', challengeScore);
+                                document.getElementById('challengeScore').innerText = challengeScore;
+                                this.classList.add('challenge-correct');
+                                alert('✅ 回答正确！+10分');
+                            } else {
+                                this.classList.add('challenge-wrong');
+                                alert(`❌ 回答错误。正确答案是：${q.options[q.correct]}`);
+                            }
+                            // 禁用选项，防止重复点击
+                            document.querySelectorAll('.challenge-option').forEach(opt => opt.style.pointerEvents = 'none');
+                            // 自动下一题
+                            setTimeout(() => {
+                                currentChallenge++;
+                                loadChallenge();
+                            }, 1500);
+                        });
+                    });
+                }
+            }
+
             const container = document.getElementById('factsPage');
             container.innerHTML = `
                 <div class="glass-card p-8 text-center max-w-2xl mx-auto">
@@ -798,17 +946,20 @@
                         <button id="shareFactBtn" class="share-btn px-4 py-1 rounded-full text-xs border border-[#D4AF37] flex items-center gap-1">📤 分享知识</button>
                         <button id="resetFactsBtn" class="share-btn px-4 py-1 rounded-full text-xs border border-red-500/50 text-red-300 hover:bg-red-500/20">🔄 重置进度</button>
                     </div>
-                    <p class="text-xs text-gray-500 mt-6">点击轮盘转动，随机解锁新知识。分享按钮可复制当前知识。</p>
+                    <div id="challengeContainer" class="challenge-quiz mt-6"></div>
+                    <p class="text-xs text-gray-500 mt-4">点击轮盘转动，随机解锁新知识。挑战模式答对一题+10分！</p>
                 </div>
             `;
             document.getElementById('spinWheel').addEventListener('click', spinAndUpdate);
             document.getElementById('shareFactBtn').addEventListener('click', shareCurrentFact);
             document.getElementById('resetFactsBtn').addEventListener('click', () => {
-                if (confirm('重置后所有冷知识将回到未解锁状态，确定吗？')) {
+                if (confirm('重置后所有冷知识和挑战分数将清空，确定吗？')) {
                     localStorage.removeItem('goldFactsUnlocked');
+                    localStorage.removeItem('goldChallengeScore');
                     renderFacts();
                 }
             });
+            loadChallenge();
             updateProgress();
         }
 
@@ -817,9 +968,8 @@
             document.querySelectorAll('.page-container').forEach(el => el.classList.add('hidden'));
             document.getElementById(`${page}Page`).classList.remove('hidden');
             document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('nav-active'));
-            const activeNav = page === 'landing' ? 'nav-landing' : page === 'home' ? 'nav-home' : page === 'simulator' ? 'nav-simulator' : page === 'timeline' ? 'nav-timeline' : 'nav-facts';
+            const activeNav = page === 'home' ? 'nav-home' : page === 'simulator' ? 'nav-simulator' : page === 'timeline' ? 'nav-timeline' : 'nav-facts';
             document.getElementById(activeNav).classList.add('nav-active');
-            if (page === 'landing') renderLanding();
             if (page === 'home') renderHome();
             if (page === 'simulator') renderSimulator();
             if (page === 'timeline') renderTimeline();
